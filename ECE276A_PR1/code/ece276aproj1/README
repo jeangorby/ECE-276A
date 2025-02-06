@@ -1,0 +1,42 @@
+# Project 1
+
+## Code Structure
+
+The code for this project is organized into the following files:
+
+### `main.py`
+This is the main file for running the core functionality of the project. It is divided into the following sections:
+1. **Motion Model**: Implements quaternion-based orientation tracking using gyroscope data.
+2. **Optimization**: Refines the estimated orientation by minimizing the cost function that incorporates motion and observation models.
+3. **Test Datasets**: Contains the logic to test the implementation on multiple datasets.
+4. **Debugging**: Includes debugging tools and intermediate steps to validate the results during development.
+
+Each section of the `main.py` file can be executed together or commented out depending on the required functionality. Additionally, there is an **exit line** in the code, which can be uncommented if you want to stop execution after processing a single dataset.
+
+### `panorama.py`
+This file is responsible for the panorama generation process. It contains one key functions whose parameters can be edited to denote train or test functionality:
+1. `generate_panorama`
+
+
+Both functions accept the dataset number as a parameter, allowing you to select which dataset to process.
+
+## Running the Code
+
+python main.py
+
+Comment out or uncomment the relevant sections in main.py based on what functionality you need.
+Uncomment the exit line if only one dataset needs to be tested.
+
+python panorama.py
+
+Modify the dataset number in the function call inside panorama.py to select the desired dataset.
+For example:
+
+generate_panorama(datasets, dataset_id=1, use_vicon=True)
+
+generate_panorama(calibrated_testset, dataset_id=10, use_vicon=False)
+
+
+## Results
+
+All results can be found in the results folder. You can find the trajectories and panoramas here.

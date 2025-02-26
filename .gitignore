@@ -9,3 +9,5 @@ ECE276A_PR1/data/vicon/viconRot7.p
 ECE276A_PR1/data/vicon/viconRot8.p
 ECE276A_PR1/data/vicon/viconRot9.p
 *.p
+*.npy
+*.png

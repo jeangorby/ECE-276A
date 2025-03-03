@@ -2,11 +2,16 @@ import gtsam
 import gtsam.utils.plot as gtsam_plot
 import matplotlib.pyplot as plt
 import numpy as np
+import scipy
 from mpl_toolkits.mplot3d import Axes3D
 from odometry import compute_odometry, load_and_sync_data
-from scan_matching import run_scan_matching, pose2d_to_SE3
+from scan_matching import run_scan_matching, pose2d_to_SE3, lidar_to_point_cloud
+from occupancy_grid_mapping import initialize_map, update_occupancy_grid
+from texture_mapping import visualize_texture_map, texture_mapping
+from icp import icp
 
-def create_pose_graph(refined_poses, loop_closure_method="fixed", loop_closure_interval=10, proximity_threshold=1.0):
+
+def create_pose_graph(refined_poses, odom_poses, lidar_scans, loop_closure_method="fixed", loop_closure_interval=10, proximity_threshold=0.01):
     """
     Constructs a factor graph for SLAM using GTSAM with SE(3) poses and loop closures.
     
@@ -21,41 +26,62 @@ def create_pose_graph(refined_poses, loop_closure_method="fixed", loop_closure_i
     """
     graph = gtsam.NonlinearFactorGraph()
     initial_estimate = gtsam.Values()
-    prior_noise = gtsam.noiseModel.Diagonal.Sigmas([0.1, 0.1, 0.1, 0.1, 0.1, 0.1])
+    # prior_noise = gtsam.noiseModel.Diagonal.Sigmas([5, 5, 5, 1, 1, 0.5])
+    # odometry_noise = gtsam.noiseModel.Diagonal.Sigmas([0.1, 0.1, 0.1, 0.05, 0.05, 0.05])
+    # loop_closure_noise = gtsam.noiseModel.Diagonal.Sigmas([0.1, 0.1, 0.1, 0.05, 0.05, 0.05])
+
+    prior_noise = gtsam.noiseModel.Diagonal.Sigmas([0.1]*6)
     odometry_noise = gtsam.noiseModel.Diagonal.Sigmas([0.2, 0.2, 0.2, 0.1, 0.1, 0.1])
     loop_closure_noise = gtsam.noiseModel.Diagonal.Sigmas([0.1, 0.1, 0.1, 0.05, 0.05, 0.05])
-    
-    first_pose = gtsam.Pose3(gtsam.Rot3(refined_poses[0][:3, :3]), gtsam.Point3(*refined_poses[0][:3, 3]))
+
+    first_pose = gtsam.Pose3(gtsam.Rot3(odom_poses[0][:3, :3]), gtsam.Point3(*odom_poses[0][:3, 3]))
+    # initial_estimate.insert(0, first_pose)
     initial_estimate.insert(0, first_pose)
     graph.add(gtsam.PriorFactorPose3(0, first_pose, prior_noise))
     
     for i in range(len(refined_poses) - 1):
+        print("Node: ", i)
         T_relative = np.linalg.inv(refined_poses[i]) @ refined_poses[i+1]
+        # T_relative = np.linalg.inv(refined_poses[i+1]) @ refined_poses[i]
         rel_pose = gtsam.Pose3(gtsam.Rot3(T_relative[:3, :3]), gtsam.Point3(*T_relative[:3, 3]))
         
         graph.add(gtsam.BetweenFactorPose3(i, i+1, rel_pose, odometry_noise))
-        next_pose = gtsam.Pose3(gtsam.Rot3(refined_poses[i+1][:3, :3]), gtsam.Point3(*refined_poses[i+1][:3, 3]))
+        next_pose = gtsam.Pose3(gtsam.Rot3(odom_poses[i+1][:3, :3]), gtsam.Point3(*odom_poses[i+1][:3, 3]))
         initial_estimate.insert(i+1, next_pose)
+        
         
         if loop_closure_method == "fixed":
             if i >= loop_closure_interval and i % loop_closure_interval == 0:
-                loop_T_relative = np.linalg.inv(refined_poses[i - loop_closure_interval]) @ refined_poses[i+1]
+                prev_pts = lidar_to_point_cloud(lidar_scans[i - loop_closure_interval])
+                curr_pts = lidar_to_point_cloud(lidar_scans[i])
+                T_temp = np.linalg.inv(refined_poses[i - loop_closure_interval]) @ refined_poses[i] # original loop_T_relative
+                # T_temp = np.linalg.inv(refined_poses[i]) @ refined_poses[i - loop_closure_interval] 
+                loop_T_relative = icp(prev_pts, curr_pts, T_temp[0:3,0:3], T_temp[:3, 3])
+                    
                 loop_pose = gtsam.Pose3(gtsam.Rot3(loop_T_relative[:3, :3]), gtsam.Point3(*loop_T_relative[:3, 3]))
                 graph.add(gtsam.BetweenFactorPose3(i - loop_closure_interval, i+1, loop_pose, loop_closure_noise))
         
         elif loop_closure_method == "proximity":
             for j in range(i):
                 distance = np.linalg.norm(refined_poses[i][:3, 3] - refined_poses[j][:3, 3])
+                # print(distance)
                 if distance < proximity_threshold:
-                    loop_T_relative = np.linalg.inv(refined_poses[j]) @ refined_poses[i]
-                    loop_pose = gtsam.Pose3(gtsam.Rot3(loop_T_relative[:3, :3]), gtsam.Point3(*loop_T_relative[:3, 3]))
-                    graph.add(gtsam.BetweenFactorPose3(j, i, loop_pose, loop_closure_noise))
+                    lidar_j = lidar_to_point_cloud(lidar_scans[j])
+                    lidar_i = lidar_to_point_cloud(lidar_scans[i])
+                    # print(np.linalg.norm(lidar_j - lidar_i))
+                    if np.linalg.norm(lidar_j - lidar_i) < 1:
 
+                        loop_T_relative = np.linalg.inv(refined_poses[j]) @ refined_poses[i]
+                        loop_pose = gtsam.Pose3(gtsam.Rot3(loop_T_relative[:3, :3]), gtsam.Point3(*loop_T_relative[:3, 3]))
+                        graph.add(gtsam.BetweenFactorPose3(j, i, loop_pose, loop_closure_noise))
+        
     return graph, initial_estimate
+
 
 def optimize_factor_graph(graph, initial_estimate):
     """Optimizes the factor graph using GTSAM's Levenberg-Marquardt optimizer."""
     optimizer = gtsam.LevenbergMarquardtOptimizer(graph, initial_estimate)
+    # optimizer = gtsam.GaussNewtonOptimizer(graph,initial_estimate)
     result = optimizer.optimize()
     return result
 
@@ -106,6 +132,7 @@ def visualize_all_trajectories(odom_x, odom_y, refined_poses, optimized_estimate
     ax.axis("equal")
     ax.grid(True)
     ax.legend()
+    plt.savefig("./results/gtsam_trajectory_21v2.png")
     plt.show()
 
 def visualize_graph(graph, initial_estimate):
@@ -135,9 +162,19 @@ def visualize_graph(graph, initial_estimate):
     plt.title("Pose Graph Visualization (SE3) with Nodes and Edges")
     plt.show()
 
+def extract_optimized_trajectory(optimized_estimate):
+    """Extracts optimized trajectory from GTSAM output."""
+    optimized_poses = []
+    for i in range(optimized_estimate.size()):
+        pose = optimized_estimate.atPose3(i)
+        T = np.eye(4)
+        T[:3, :3] = pose.rotation().matrix()
+        T[:3, 3] = pose.translation()
+        optimized_poses.append(T)
+    return optimized_poses
 
 if __name__ == "__main__":
-    dataset = 20
+    dataset = 21
     
     # Load and sync odometry data
     encoder_counts, encoder_stamps, imu_angular_velocity, imu_stamps = load_and_sync_data(dataset)
@@ -152,12 +189,54 @@ if __name__ == "__main__":
     
     odom_poses = [pose2d_to_SE3(x[i], y[i], theta[i]) for i in range(len(x))]
     refined_poses = run_scan_matching(odom_poses, lidar_scans, angle_min, angle_increment)
+    # refined_poses = np.load("best_icp_scan_matching2.npy")
     
-    graph, initial_estimate = create_pose_graph(refined_poses, loop_closure_method="proximity")
+    print("Creating Pose Graph")
+
+    graph, initial_estimate = create_pose_graph(refined_poses, odom_poses, lidar_scans, loop_closure_method="proximity")
+
+    # graph, initial_estimate = create_pose_graph(refined_poses, odom_poses, lidar_scans, loop_closure_method="fixed")
+    # graph, initial_estimate = create_pose_graph(refined_poses, odom_poses, lidar_scans, loop_closure_method="proximity")
+    # graph, initial_estimate = create_pose_graph(refined_poses, odom_poses, lidar_scans, loop_closure_method="mixed")
     # graph, initial_estimate = create_pose_graph(odom_poses)
 
+    print("Optimizing using GTSAM")
     optimized_estimate = optimize_factor_graph(graph, initial_estimate)
 
     # visualize_trajectory_2d(optimized_estimate)
     # visualize_graph(graph, initial_estimate)
+
     visualize_all_trajectories(x, y, refined_poses, optimized_estimate)
+
+    gtsam_poses = extract_optimized_trajectory(optimized_estimate)
+    # Update Occupancy Grid using GTSAM-enhanced trajectory
+    MAP_gtsam = initialize_map()
+    for i in range(len(gtsam_poses)):
+        print("Occupancy Update: ", i)
+        lidar_scan = lidar_scans[i]
+        MAP_gtsam = update_occupancy_grid(MAP_gtsam, gtsam_poses[i], lidar_scan, angle_min, angle_increment)
+
+    # Perform Texture Mapping using GTSAM-enhanced trajectory
+    MAP_texture = texture_mapping(dataset, gtsam_poses, encoder_stamps)
+
+    # plt.imshow(MAP_gtsam['map'].T, cmap="gray", origin="lower")
+    # plt.title("Occupancy Grid Map (GTSAM)")
+    fig, axs = plt.subplots(1, 2, figsize=(12, 6))
+
+    axs[0].imshow(MAP_gtsam['map'].T, cmap="gray", origin="lower")
+    axs[0].set_title("Occupancy Grid Map (GTSAM)")
+    axs[0].axis("off")
+
+    
+
+    # Visualize Occupancy Grid and Texture Map
+    # visualize_texture_map(MAP_texture)
+
+    axs[1].imshow(np.rot90(MAP_texture['texture']))  # Flip to match orientation
+    axs[1].set_title("Texture Map (GTSAM)")
+    axs[1].axis("off")
+
+    plt.savefig('./results/gtsam_mapping_21v2.png')
+    plt.show()
+    
+

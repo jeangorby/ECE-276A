@@ -64,6 +64,7 @@ def lidar_to_point_cloud(ranges, angle_min, angle_increment, max_range=30, min_r
     angles = angle_min + np.arange(len(ranges)) * angle_increment[0]
 
     valid = np.logical_and(ranges > min_range, ranges < max_range)
+
     x = ranges[valid] * np.cos(angles[valid])
     y = ranges[valid] * np.sin(angles[valid])
 
@@ -138,7 +139,7 @@ def update_occupancy_grid(MAP, robot_pose, lidar_scan, angle_min, angle_incremen
 
 
 if __name__ == "__main__":
-    dataset = 20
+    dataset = 21
 
     # ----------------- Load Odometry Data ----------------- #
     encoder_counts, encoder_stamps, imu_angular_velocity, imu_stamps = load_and_sync_data(dataset)
@@ -154,6 +155,7 @@ if __name__ == "__main__":
 
     # ----------------- Compute ICP-Enhanced Trajectory ----------------- #
     refined_poses = run_scan_matching(odom_poses, lidar_scans, angle_min, angle_increment)
+    # refined_poses = np.load("best_icp_scan_matching2.npy")
 
     # Ensure matching scan count
     num_frames = min(len(lidar_scans), len(odom_poses), len(refined_poses))
@@ -179,5 +181,5 @@ if __name__ == "__main__":
 
     axs[1].imshow(MAP_icp['map'].T, cmap="gray", origin="lower")
     axs[1].set_title("Occupancy Grid Map (ICP)")
-
+    plt.savefig("./results/occupancy_grid_map_21.png")
     plt.show()

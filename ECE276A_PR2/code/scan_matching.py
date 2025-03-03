@@ -15,13 +15,14 @@ def pose2d_to_SE3(x, y, theta):
     T[0,3] = x;   T[1,3] = y
     return T
 
-def lidar_to_point_cloud(ranges, angle_min, angle_increment):
+def lidar_to_point_cloud(ranges, angle_min=-135.0 * np.pi/180.0, angle_increment=0.25 * np.pi/180.0):
     """
     Convert 1D array of ranges into a 3xN point cloud (x,y,z=0).
     angles = angle_min + i * angle_increment
     """
     N = len(ranges)
     angles = angle_min + np.arange(N) * angle_increment
+
     x = ranges * np.cos(angles)
     y = ranges * np.sin(angles)
     z = np.zeros_like(x)
@@ -60,7 +61,7 @@ def run_scan_matching(odom_poses, lidar_scans, angle_min, angle_increment):
         
         # Use T_odom_rel as initial guess for ICP
         T_icp_rel = icp(prev_pts, curr_pts, R_init=T_odom_rel[0:3, 0:3], p_init=T_odom_rel[:3,3])
-
+       
         # Update the global pose
         T_global = T_global @ T_icp_rel
 
@@ -74,7 +75,7 @@ def run_scan_matching(odom_poses, lidar_scans, angle_min, angle_increment):
 if __name__ == "__main__":
 
     # --------- A) Load and sync data ---------
-    encoder_counts, encoder_stamps, synced_imu_angular_velocity, synced_imu_stamps = load_and_sync_data(dataset=20)
+    encoder_counts, encoder_stamps, synced_imu_angular_velocity, synced_imu_stamps = load_and_sync_data(dataset=21)
 
     # --------- B) Compute odometry (x,y,theta) ---------
     x, y, theta = compute_odometry(encoder_counts, encoder_stamps, synced_imu_angular_velocity)
@@ -92,7 +93,7 @@ if __name__ == "__main__":
     angle_increment = 0.25 * np.pi/180.0
 
     # Just as an example, load a .npz with your own Hokuyo data:
-    hokuyo_data = np.load(f"../data/Hokuyo20.npz")
+    hokuyo_data = np.load(f"../data/Hokuyo21.npz")
     lidar_ranges = hokuyo_data["ranges"]       # shape (1081, T)
     # The data might be arranged differently, so adapt as needed.
     # We assume each column is one scan or vice versa.
@@ -107,6 +108,10 @@ if __name__ == "__main__":
 
     # --------- D) Run scan matching with odometry as initial guess ---------
     global_poses_icp = run_scan_matching(odom_poses, lidar_scans, angle_min, angle_increment)
+    # print(global_poses_icp[0])
+    # np.save('best_icp_scan_matching2.npy', np.array(global_poses_icp))
+    # test = np.load('best_icp_scan_matching.npy')
+    # print(test[0])
 
     # --------- E) Plot final ICP-refined trajectory ---------
     xs_icp = []
@@ -126,4 +131,5 @@ if __name__ == "__main__":
     plt.axis("equal")
     plt.grid(True)
     plt.legend()
+    plt.savefig("./results/scan_matching_21.png")
     plt.show()

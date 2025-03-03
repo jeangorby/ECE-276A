@@ -72,10 +72,10 @@ if __name__ == "__main__":
     plt.plot(x, y, marker="o", markersize=1, linestyle="-", linewidth=1, color="blue", label="Robot Trajectory (Synced Data)")
     plt.xlabel("X Position (m)")
     plt.ylabel("Y Position (m)")
-    plt.title("Robot Trajectory from Encoder and IMU Odometry (Synchronized Data)")
+    plt.title("Robot Trajectory from Encoder and IMU Odometry")
     plt.legend()
     plt.grid(True)
     plt.axis("equal")  # Keep aspect ratio
-
+    plt.savefig("./results/odometry_20.png")
     # Show the plot
     plt.show()

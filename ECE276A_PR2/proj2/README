@@ -1,0 +1,31 @@
+# Project 2
+
+## Code Structure
+
+The code for this project is organized into the following files:
+
+### `odometry.py`
+
+### `icp.py`
+
+### `scan_matching.py`
+
+### `occupancy_grid_mapping.py`
+
+### `texture_mapping.py`
+
+### `factor_graph.py`
+
+## Running the Code
+
+Note that each of these functions can be ran individually and will run the code related to its subpart in the project. For instance, 
+`odometry.py` will run the Encoder and IMU odometry section while `icp.py` will run the ICP warm up section. The organization above shows the order it was revealed in the project document. 
+
+python __.py
+
+will run each individual section. If the dataset number wants to be changed, there is a variable for each code that can be changed for this purpose. 
+
+
+## Results
+
+All results can be found in the results folder.
